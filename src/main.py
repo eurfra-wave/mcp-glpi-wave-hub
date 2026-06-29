@@ -17,20 +17,18 @@ from src.tools import register_all_tools
 glpi_client = GLPIClient()
 
 # Servidor MCP
-mcp = FastMCP("Hermes-GLPI-Wave-Hub", host=settings.mcp_host, port=settings.mcp_port)
+mcp = FastMCP("Hermes-GLPI-Wave-Hub")
 
 # Registrar todas las tools
 register_all_tools(mcp, glpi_client)
 
 
-# Health check endpoint
+# Health check MCP tool
 @mcp.tool(name="glpi_health_check")
 async def health_check() -> str:
     """Verifica conectividad con GLPI y estado de la sesión."""
     try:
-        # Intentar una petición simple
         await glpi_client.ensure_session()
-        # Si llegamos aquí, la sesión es válida
         return json.dumps({
             "status": "healthy",
             "glpi_connected": True,
@@ -46,8 +44,21 @@ async def health_check() -> str:
 
 if __name__ == "__main__":
     if "--sse" in sys.argv:
-        # Modo producción: SSE para Hermes Agent
-        mcp.run(transport="sse")
+        from starlette.applications import Starlette
+        from starlette.routing import Route, Mount
+        from starlette.responses import JSONResponse
+        import uvicorn
+
+        async def http_health(request):
+            return JSONResponse({"status": "healthy"})
+
+        app = Starlette(
+            routes=[
+                Route("/health", http_health),
+                Mount("/", app=mcp.sse_app()),
+            ],
+        )
+
+        uvicorn.run(app, host=settings.mcp_host, port=settings.mcp_port)
     else:
-        # Modo desarrollo: stdio para debugging
         mcp.run(transport="stdio")
