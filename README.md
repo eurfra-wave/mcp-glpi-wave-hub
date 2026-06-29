@@ -20,13 +20,25 @@ cp .env.example .env
 # Editar .env con credenciales GLPI
 
 # 2. Levantar con Docker
-docker-compose up -d --build
+docker compose up -d --build
 
 # 3. Verificar salud
 curl http://localhost:8080/health
 ```
 
-## Herramientas disponibles (70)
+## Despliegue en Proxmox LXC
+
+Script completo desde el host de Proxmox:
+
+```bash
+bash deploy/deploy-proxmox.sh
+```
+
+Esto crea un LXC Debian 12 (ID 200) con Docker, clona el repo y levanta el servicio.
+
+Documentación completa en `deploy/README.md`.
+
+## Herramientas disponibles (71)
 
 - **Tickets** (11): list, get, create, update, delete, followup, task, solution, assign, get_tasks, get_followups
 - **Assets** (15): computers (CRUD + delete), printers (list, get, create), monitors (list, get), phones (list, get), network equipment (list, get, create)
