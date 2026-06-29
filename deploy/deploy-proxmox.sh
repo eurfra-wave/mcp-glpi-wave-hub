@@ -1,9 +1,9 @@
 #!/usr/bin/bash
 # ============================================================
-# deploy-proxmox.sh — Crea el LXC y despliega mcp-glpi-wave-hub
+# deploy-proxmox.sh — Crea el LXC Alpine + Docker y despliega mcp-glpi-wave-hub
 #
 # Ejecutar desde el HOST de Proxmox (no desde dentro del LXC)
-# Uso: bash deploy-proxmox.sh
+# Uso: bash deploy/deploy-proxmox.sh
 # ============================================================
 
 set -euo pipefail
@@ -19,9 +19,9 @@ LXC_RAM="2048"
 LXC_SWAP="1024"
 LXC_CORES="2"
 LXC_PASSWORD="mcp-glpi-hub"
-LXC_TEMPLATE="local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst"
+LXC_TEMPLATE="local:vztmpl/alpine-3.21-standard_3.21.3-x86_64.tar.zst"
 
-REPO_URL="https://github.com/TU_USUARIO/mcp-glpi-wave-hub.git"
+REPO_URL="https://github.com/eurfra-wave/mcp-glpi-wave-hub.git"
 INSTALL_PATH="/opt/mcp-glpi-wave-hub"
 # ============================================================
 
@@ -32,14 +32,14 @@ echo ""
 
 # Verificar que estamos en Proxmox
 if ! command -v pct &> /dev/null; then
-    echo "❌ Este script debe ejecutarse en el host de Proxmox"
+    echo "ERROR: Este script debe ejecutarse en el host de Proxmox"
     exit 1
 fi
 
 # Verificar si el LXC ya existe
 if pct status "$LXC_ID" &> /dev/null; then
-    echo "⚠️  El LXC $LXC_ID ya existe"
-    read -p "¿Eliminarlo y recrearlo? (s/N): " CONFIRM
+    echo "AVISO: El LXC $LXC_ID ya existe"
+    read -p "Eliminarlo y recrearlo? (s/N): " CONFIRM
     if [[ "$CONFIRM" != "s" && "$CONFIRM" != "S" ]]; then
         echo "Cancelado."
         exit 0
@@ -48,20 +48,19 @@ if pct status "$LXC_ID" &> /dev/null; then
     pct stop "$LXC_ID"
     sleep 2
     pct destroy "$LXC_ID" --purge
-    echo "✅ LXC $LXC_ID eliminado"
+    echo "LXC $LXC_ID eliminado"
 fi
 
-# Descargar template si no existe
-if ! pct mount "$LXC_ID" 2>/dev/null; then
-    echo "📥 Verificando template Debian 12..."
-    if [ ! -f "/var/lib/vz/template/cache/debian-12-standard_12.7-1_amd64.tar.zst" ]; then
-        pveam update
-        pveam install debian-12-standard
-    fi
+# Descargar template Alpine si no existe
+echo "Verificando template Alpine 3.21..."
+pveam update
+if ! pveam available | grep -q "alpine-3.21"; then
+    echo "Descargando template Alpine 3.21..."
+    pveam install 3.21
 fi
 
 # Crear LXC
-echo "🔨 Creando LXC $LXC_ID ($LXC_HOSTNAME)..."
+echo "Creando LXC $LXC_ID ($LXC_HOSTNAME)..."
 pct create "$LXC_ID" "$LXC_TEMPLATE" \
     --hostname "$LXC_HOSTNAME" \
     --memory "$LXC_RAM" \
@@ -70,23 +69,19 @@ pct create "$LXC_ID" "$LXC_TEMPLATE" \
     --net0 "name=eth0,bridge=$LXC_BRIDGE,ip=$LXC_IP,gw=$LXC_GW,type=veth" \
     --rootfs "${LXC_ID}:local-lvm:${LXC_DISK},size=${LXC_DISK}G" \
     --password "$LXC_PASSWORD" \
-    --ostype debian \
+    --ostype alpine \
     --unprivileged 0 \
     --features "nesting=1,keyctl=1" \
     --onboot 1 \
     --startup "order=2"
 
-# Habilitar Docker (nested containers)
-echo "🐳 Configurando soporte Docker en LXC..."
-pct set "$LXC_ID" --features "nesting=1,keyctl=1"
-
 # Iniciar LXC
-echo "▶️  Iniciando LXC..."
+echo "Iniciando LXC..."
 pct start "$LXC_ID"
 sleep 5
 
 # Esperar a que el LXC esté listo
-echo "⏳ Esperando que el LXC esté listo..."
+echo "Esperando que el LXC este listo..."
 for i in {1..30}; do
     if pct exec "$LXC_ID" -- test -f /etc/os-release 2>/dev/null; then
         break
@@ -95,44 +90,26 @@ for i in {1..30}; do
 done
 
 # Ejecutar setup dentro del LXC
-echo "📦 Ejecutando setup dentro del LXC..."
+echo "Ejecutando setup dentro del LXC..."
 pct exec "$LXC_ID" -- bash -c "
 set -euo pipefail
 
 # Actualizar sistema
-apt-get update
-apt-get upgrade -y
+apk update
+apk upgrade
 
 # Instalar dependencias
-apt-get install -y \
-    curl \
-    git \
-    ca-certificates \
-    gnupg \
-    lsb-release \
-    wget \
-    apt-transport-https
+apk add bash curl git docker docker-compose
 
-# Instalar Docker
-echo '🐳 Instalando Docker...'
-install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-chmod a+r /etc/apt/keyrings/docker.gpg
+# Habilitar e iniciar Docker
+rc-update add docker boot
+service docker start
 
-echo \"deb [arch=\$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian \$(lsb_release -cs) stable\" > /etc/apt/sources.list.d/docker.list
-
-apt-get update
-apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-
-# Habilitar Docker
-systemctl enable docker
-systemctl start docker
-
-echo '✅ Docker instalado correctamente'
+echo 'Docker instalado correctamente'
 "
 
 # Clonar repositorio
-echo "📥 Clonando repositorio..."
+echo "Clonando repositorio..."
 pct exec "$LXC_ID" -- bash -c "
 if [ -d '$INSTALL_PATH' ]; then
     cd '$INSTALL_PATH' && git pull
@@ -142,19 +119,19 @@ fi
 "
 
 # Crear .env
-echo "📝 Creando archivo .env..."
+echo "Creando archivo .env..."
 pct exec "$LXC_ID" -- bash -c "
 if [ ! -f '$INSTALL_PATH/.env' ]; then
     cp '$INSTALL_PATH/.env.example' '$INSTALL_PATH/.env'
     echo ''
-    echo '⚠️  Edita el archivo .env con tus credenciales reales:'
+    echo 'Edita el archivo .env con tus credenciales reales:'
     echo '    nano $INSTALL_PATH/.env'
     echo ''
 fi
 "
 
 # Construir y levantar
-echo "🔨 Construyendo y levantando el servicio..."
+echo "Construyendo y levantando el servicio..."
 pct exec "$LXC_ID" -- bash -c "
 cd '$INSTALL_PATH'
 docker compose up -d --build
@@ -162,7 +139,7 @@ docker compose up -d --build
 
 echo ""
 echo "============================================="
-echo "  ✅ DESPLIEGUE COMPLETADO"
+echo "  DESPLIEGUE COMPLETADO"
 echo "============================================="
 echo ""
 echo "  LXC ID:     $LXC_ID"
@@ -170,12 +147,13 @@ echo "  Hostname:   $LXC_HOSTNAME"
 echo "  IP:         ${LXC_IP%/*}"
 echo "  Puerto:     8080"
 echo "  Password:   $LXC_PASSWORD"
+echo "  OS:         Alpine 3.21"
 echo ""
-echo "  📋 Siguientes pasos:"
+echo "  Siguientes pasos:"
 echo "  1. Editar .env con credenciales GLPI:"
 echo "     pct exec $LXC_ID -- nano $INSTALL_PATH/.env"
 echo ""
-echo "  2. Reiniciar el servicio después de editar .env:"
+echo "  2. Reiniciar el servicio despues de editar .env:"
 echo "     pct exec $LXC_ID -- bash -c 'cd $INSTALL_PATH && docker compose restart'"
 echo ""
 echo "  3. Verificar salud:"

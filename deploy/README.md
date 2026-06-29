@@ -14,7 +14,7 @@ bash /tmp/deploy-proxmox.sh
 ```
 
 Este script:
-1. Crea un LXC Debian 12 (ID 200)
+1. Crea un LXC Alpine 3.21 (ID 200)
 2. Instala Docker dentro del LXC
 3. Clona el repositorio
 4. Levanta el servicio
@@ -61,6 +61,7 @@ pct exec 200 -- bash -c 'cd /opt/mcp-glpi-wave-hub && docker compose logs -f'
 | Hostname | mcp-glpi-hub |
 | IP | 10.0.0.10/24 |
 | Gateway | 10.0.0.1 |
+| OS | Alpine 3.21 |
 | RAM | 2048 MB |
 | Disco | 8 GB |
 | Cores | 2 |
