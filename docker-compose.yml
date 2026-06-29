@@ -13,7 +13,7 @@ services:
       proxmox-internal:
         ipv4_address: ${HUB_INTERNAL_HOST}
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:${MCP_PORT}/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:${MCP_PORT:-8080}/health"]
       interval: 30s
       timeout: 10s
       retries: 3
