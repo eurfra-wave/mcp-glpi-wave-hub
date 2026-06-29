@@ -9,7 +9,7 @@ WORKDIR /app
 COPY pyproject.toml README.md ./
 
 # Install dependencies
-RUN uv sync --frozen --no-dev
+RUN uv sync --no-dev
 
 # Runtime stage
 FROM python:3.12-alpine

@@ -17,7 +17,7 @@ from src.tools import register_all_tools
 glpi_client = GLPIClient()
 
 # Servidor MCP
-mcp = FastMCP("Hermes-GLPI-Wave-Hub")
+mcp = FastMCP("Hermes-GLPI-Wave-Hub", host=settings.mcp_host, port=settings.mcp_port)
 
 # Registrar todas las tools
 register_all_tools(mcp, glpi_client)
@@ -47,7 +47,7 @@ async def health_check() -> str:
 if __name__ == "__main__":
     if "--sse" in sys.argv:
         # Modo producción: SSE para Hermes Agent
-        mcp.run(transport="sse", port=settings.mcp_port, host=settings.mcp_host)
+        mcp.run(transport="sse")
     else:
         # Modo desarrollo: stdio para debugging
         mcp.run(transport="stdio")
